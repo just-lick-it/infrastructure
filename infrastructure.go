@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	filerotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -17,8 +18,6 @@ const (
 	green string = "\x1b[97;104m"
 	reset string = "\x1b[0m"
 )
-
-type ResourceReleaseFunc func() error
 
 type finalError struct {
 	err error
@@ -53,10 +52,10 @@ type ProjectInfrastructure struct {
 	WaitGroup           sync.WaitGroup
 
 	// Release of project resources
-	releaseFunc ResourceReleaseFunc
+	releaseFunc func() error
 }
 
-func NewProjectManagement(_ctx context.Context, _optionFuncs ...OptionFunc) (*ProjectInfrastructure, error) {
+func NewProjectInfrastructure(_ctx context.Context, _optionFuncs ...OptionFunc) (*ProjectInfrastructure, error) {
 	ctx := context.Background()
 	if _ctx != nil {
 		ctx = _ctx
@@ -88,7 +87,7 @@ func (pm *ProjectInfrastructure) processError() {
 	for {
 		select {
 		case <-pm.errEndChan:
-			logrus.Info("projectmanagement module stopped")
+			logrus.Info("project infrastructure module stopped")
 			return
 		case _error := <-pm.errChan:
 			if _error == nil {
@@ -252,7 +251,23 @@ func (pm *ProjectInfrastructure) logOutput(_err *finalError) {
 }
 
 func (pm *ProjectInfrastructure) initLogrus(_opts ProjectInfrastructureOptions) error {
-	logrus.SetOutput(_opts.LogOut)
+	switch _opts.LogOut {
+	case "stdout":
+		logrus.SetOutput(os.Stdout)
+	case "file":
+		w, err := filerotatelogs.New(
+			_opts.LogPath,
+			filerotatelogs.WithRotationCount(uint(_opts.LogMaxFileNum)),
+			filerotatelogs.WithRotationSize(int64(_opts.LogMaxFileSize)),
+		)
+		if err != nil {
+			return err
+		}
+		logrus.SetOutput(w)
+	default:
+		logrus.Warnf("unknown log output type: %s, use default stdout", _opts.LogOut)
+		logrus.SetOutput(os.Stdout)
+	}
 
 	switch _opts.LogLevel {
 	case "debug":

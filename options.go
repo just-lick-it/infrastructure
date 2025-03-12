@@ -1,13 +1,8 @@
 package infrastructure
 
-import (
-	"io"
-	"os"
-)
-
 var (
 	_defaultLogLevel    = "debug"
-	_defaultLogOut      = os.Stdout
+	_defaultLogOut      = "stdout"
 	_defaultLogPath     = "./project.log"
 	_defaultMaxFileNum  = 10
 	_defaultMaxFileSize = 10485760
@@ -18,14 +13,14 @@ type OptionFunc func(*ProjectInfrastructureOptions)
 
 type ProjectInfrastructureOptions struct {
 	LogLevel       string
-	LogOut         io.Writer
+	LogOut         string
 	LogPath        string
 	LogMaxFileNum  uint
 	LogMaxFileSize uint
 
 	ErrChanLen uint
 
-	ReleaseFunc ResourceReleaseFunc
+	ReleaseFunc func() error
 }
 
 func DefaultOptions() ProjectInfrastructureOptions {
@@ -36,7 +31,9 @@ func DefaultOptions() ProjectInfrastructureOptions {
 		LogMaxFileNum:  uint(_defaultMaxFileNum),
 		LogMaxFileSize: uint(_defaultMaxFileSize),
 		ErrChanLen:     uint(_defaultErrChanLen),
-		ReleaseFunc:    nil,
+		ReleaseFunc: func() error {
+			return nil
+		},
 	}
 }
 
@@ -46,7 +43,8 @@ func WithLogLevel(_level string) OptionFunc {
 	}
 }
 
-func WithLogOutput(_out io.Writer) OptionFunc {
+// Default output of logs to "stdout", or you can specify "file"
+func WithLogOutput(_out string) OptionFunc {
 	return func(o *ProjectInfrastructureOptions) {
 		o.LogOut = _out
 	}
@@ -70,7 +68,7 @@ func WithLogMaxFileSize(_size uint) OptionFunc {
 	}
 }
 
-func WithResourceRleaseFunc(_func ResourceReleaseFunc) OptionFunc {
+func WithResourceRleaseFunc(_func func() error) OptionFunc {
 	return func(o *ProjectInfrastructureOptions) {
 		o.ReleaseFunc = _func
 	}
