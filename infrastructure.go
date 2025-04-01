@@ -282,6 +282,10 @@ func (pm *ProjectInfrastructure) logOutput(_err *finalError) {
 }
 
 func (pm *ProjectInfrastructure) initLogrus(_opts ProjectInfrastructureOptions) error {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+	})
+	
 	switch _opts.LogOut {
 	case "stdout":
 		logrus.SetOutput(os.Stdout)
