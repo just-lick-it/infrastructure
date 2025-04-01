@@ -177,7 +177,7 @@ func (pm *ProjectInfrastructure) logFormat(_err error, _module string) string {
 	}
 
 	switch pm.options.LogOut {
-	case "output":
+	case "stdout":
 		log = fmt.Sprintf("%v %s %-10s %s %+v",
 			time.Now().Format("2006-01-02 15:04:05"),
 			green,
@@ -204,7 +204,7 @@ func (pm *ProjectInfrastructure) errorStackMsg(_module string) string {
 	}
 
 	switch pm.options.LogOut {
-	case "output":
+	case "stdout":
 		log = fmt.Sprintf("%v %s %-10s %s",
 			time.Now().Format("2006-01-02 15:04:05"),
 			green,
@@ -282,6 +282,10 @@ func (pm *ProjectInfrastructure) logOutput(_err *finalError) {
 }
 
 func (pm *ProjectInfrastructure) initLogrus(_opts ProjectInfrastructureOptions) error {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+	})
+
 	switch _opts.LogOut {
 	case "stdout":
 		logrus.SetOutput(os.Stdout)
