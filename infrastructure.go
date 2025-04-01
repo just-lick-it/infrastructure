@@ -38,6 +38,8 @@ func (e *finalError) Error() string {
 }
 
 type ProjectInfrastructure struct {
+	options *ProjectInfrastructureOptions
+
 	errChan chan error
 
 	errEndChan chan struct{}
@@ -67,6 +69,7 @@ func NewProjectInfrastructure(_ctx context.Context, _optionFuncs ...OptionFunc) 
 	}
 
 	PM := &ProjectInfrastructure{
+		options:     &options,
 		errChan:     make(chan error, options.ErrChanLen),
 		errEndChan:  make(chan struct{}),
 		releaseFunc: options.ReleaseFunc,
@@ -167,26 +170,54 @@ func (pm *ProjectInfrastructure) ErrorTransmit(_module, _severity string, _err e
 
 // Format error information.
 func (pm *ProjectInfrastructure) logFormat(_err error, _module string) string {
+	var log string
+
 	if len(_module) > 10 {
 		_module = _module[:10]
 	}
-	log := fmt.Sprintf("%v %s %-10s %s %+v",
-		time.Now().Format("2006-01-02 15:04:05"),
-		green, _module, reset,
-		_err.Error(),
-	)
+
+	switch pm.options.LogOut {
+	case "output":
+		log = fmt.Sprintf("%v %s %-10s %s %+v",
+			time.Now().Format("2006-01-02 15:04:05"),
+			green,
+			_module,
+			reset,
+			_err.Error(),
+		)
+	case "file":
+		log = fmt.Sprintf("%v %-10s %+v",
+			time.Now().Format("2006-01-02 15:04:05"),
+			_module,
+			_err.Error(),
+		)
+	}
 	return log
 }
 
 // Format error chain information.
 func (pm *ProjectInfrastructure) errorStackMsg(_module string) string {
+	var log string
+
 	if len(_module) > 10 {
 		_module = _module[:10]
 	}
-	return fmt.Sprintf("%v %s %-10s %s",
-		time.Now().Format("2006-01-02 15:04:05"),
-		green, _module, reset,
-	)
+
+	switch pm.options.LogOut {
+	case "output":
+		log = fmt.Sprintf("%v %s %-10s %s",
+			time.Now().Format("2006-01-02 15:04:05"),
+			green,
+			_module,
+			reset,
+		)
+	case "file":
+		log = fmt.Sprintf("%v %-10s",
+			time.Now().Format("2006-01-02 15:04:05"),
+			_module,
+		)
+	}
+	return log
 }
 
 // Print the log and determine whether to print the complete error chain and exit after printing is complete.
