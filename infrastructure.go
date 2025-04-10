@@ -19,30 +19,8 @@ const (
 	reset string = "\x1b[0m"
 )
 
-type finalError struct {
-	err error
-
-	module string
-
-	severity string
-
-	cancelFunc context.CancelFunc
-
-	printStack bool
-
-	exitAfterPrint bool
-}
-
-func (e *finalError) Error() string {
-	return fmt.Sprintf("%+v", e.err)
-}
-
 type ProjectInfrastructure struct {
 	options *ProjectInfrastructureOptions
-
-	errChan chan error
-
-	errEndChan chan struct{}
 
 	// Context for controlling resource release of ProjectInfrastructure
 	cancel     context.Context
@@ -70,8 +48,6 @@ func NewProjectInfrastructure(_ctx context.Context, _optionFuncs ...OptionFunc) 
 
 	PM := &ProjectInfrastructure{
 		options:     &options,
-		errChan:     make(chan error, options.ErrChanLen),
-		errEndChan:  make(chan struct{}),
 		releaseFunc: options.ReleaseFunc,
 	}
 	if err := PM.initLogrus(options); err != nil {
@@ -79,35 +55,7 @@ func NewProjectInfrastructure(_ctx context.Context, _optionFuncs ...OptionFunc) 
 	}
 	PM.cancel, PM.cancelFunc = context.WithCancel(ctx)
 	PM.GoroutineCancel, PM.goroutineCancelFunc = context.WithCancel(ctx)
-
-	go PM.processError()
-
 	return PM, nil
-}
-
-// Receive and handle error chain
-func (pm *ProjectInfrastructure) processError() {
-	for {
-		select {
-		case <-pm.errEndChan:
-			logrus.Info("project infrastructure module stopped")
-			return
-		case _error := <-pm.errChan:
-			if _error == nil {
-				continue
-			}
-
-			_f_error, ok := _error.(*finalError)
-			if !ok {
-				logrus.Error(_error.Error())
-				continue
-			}
-
-			if _f_error.err != nil {
-				pm.logOutput(_f_error)
-			}
-		}
-	}
 }
 
 // Release resources.
@@ -116,11 +64,6 @@ func (pm *ProjectInfrastructure) ResourceRelease() {
 
 	pm.goroutineCancelFunc()
 	pm.WaitGroup.Wait()
-
-	close(pm.errEndChan)
-	close(pm.errChan)
-
-	time.Sleep(100 * time.Millisecond)
 }
 
 /*
@@ -139,33 +82,20 @@ Transmit the error chain to the exception handling module
 func (pm *ProjectInfrastructure) ErrorTransmit(_module, _severity string, _err error, _exit_after_print, _print_stack bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			logrus.Errorf("send error to closed channel: %+v", r)
+			logrus.Errorf("%+v", r)
 		}
 	}()
 
+	pm.WaitGroup.Add(1)
+	defer pm.WaitGroup.Done()
+
 	if _exit_after_print {
-		cancel, cancelFunc := context.WithCancel(pm.cancel)
-		pm.errChan <- &finalError{
-			err:            _err,
-			cancelFunc:     cancelFunc,
-			module:         _module,
-			severity:       _severity,
-			printStack:     _print_stack,
-			exitAfterPrint: _exit_after_print,
-		}
-		<-cancel.Done()
+		pm.logOutput(_module, _severity, _err, _print_stack)
+		pm.WaitGroup.Done()
 		pm.ResourceRelease()
 		os.Exit(1)
 	}
-
-	pm.errChan <- &finalError{
-		err:            _err,
-		cancelFunc:     nil,
-		module:         _module,
-		severity:       _severity,
-		printStack:     _print_stack,
-		exitAfterPrint: _exit_after_print,
-	}
+	pm.logOutput(_module, _severity, _err, _print_stack)
 }
 
 // Format error information.
@@ -220,64 +150,60 @@ func (pm *ProjectInfrastructure) errorStackMsg(_module string) string {
 	return log
 }
 
-// Print the log and determine whether to print the complete error chain and exit after printing is complete.
-func (pm *ProjectInfrastructure) logOutput(_err *finalError) {
-	switch _err.severity {
+// Print the log and determine whether to print the complete error chain.
+func (pm *ProjectInfrastructure) logOutput(_module, _severity string, _err error, _print_stack bool) {
+	switch _severity {
 	case "debug":
-		if _err.printStack {
-			logrus.Debugf(pm.errorStackMsg(_err.module)+"\n%+v", _err.err)
+		if _print_stack {
+			logrus.Debugf(pm.errorStackMsg(_module)+"\n%+v", _err)
 		} else {
 			logrus.Debug(
 				pm.logFormat(
-					errors.Cause(_err.err),
-					_err.module,
+					errors.Cause(_err),
+					_module,
 				),
 			)
 		}
 	case "info":
-		if _err.printStack {
-			logrus.Infof(pm.errorStackMsg(_err.module)+"\n%+v", _err.err)
+		if _print_stack {
+			logrus.Infof(pm.errorStackMsg(_module)+"\n%+v", _err)
 		} else {
 			logrus.Info(
 				pm.logFormat(
-					errors.Cause(_err.err),
-					_err.module,
+					errors.Cause(_err),
+					_module,
 				),
 			)
 		}
 	case "warn":
-		if _err.printStack {
-			logrus.Warnf(pm.errorStackMsg(_err.module)+"\n%+v", _err.err)
+		if _print_stack {
+			logrus.Warnf(pm.errorStackMsg(_module)+"\n%+v", _err)
 		} else {
 			logrus.Warn(
 				pm.logFormat(
-					errors.Cause(_err.err),
-					_err.module,
+					errors.Cause(_err),
+					_module,
 				),
 			)
 		}
 	case "error":
-		if _err.printStack {
-			logrus.Errorf(pm.errorStackMsg(_err.module)+"\n%+v", _err.err)
+		if _print_stack {
+			logrus.Errorf(pm.errorStackMsg(_module)+"\n%+v", _err)
 		} else {
 			logrus.Error(
 				pm.logFormat(
-					errors.Cause(_err.err),
-					_err.module,
+					errors.Cause(_err),
+					_module,
 				),
 			)
 		}
 	default:
-		logrus.Error(fmt.Sprintf("[unsupport error type: %s]", _err.severity) +
+		logrus.Error(fmt.Sprintf("[unsupport error type: %s]", _severity) +
 			pm.logFormat(
-				errors.Cause(_err.err),
-				_err.module,
+				errors.Cause(_err),
+				_module,
 			),
 		)
-	}
-
-	if _err.exitAfterPrint {
-		_err.cancelFunc()
 	}
 }
 
